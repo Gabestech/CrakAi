@@ -1,3 +1,4 @@
+//----------OG Style----------------------------
 // import Image from "next/image";
 //
 // export default function Home() {
@@ -63,6 +64,134 @@
 //     </div>
 //   );
 // }
-export default function Home() {
-  return <h1>Hello World</h1>;
+//--------------Part1 hello World-----------------------------
+// export default function Home() {
+//   return <h1>Hello World</h1>;
+//}
+//-------------------Part2 MK1-------------------------------
+// import { supabase } from "@/lib/supabaseClient";
+//
+// type NewsSnippet = {
+//   id: number;
+//   headline: string;
+//   category: string | null;
+//   source_url: string | null;
+//   priority: number | null;
+// };
+//
+// export default async function Home() {
+//   const { data, error } = await supabase
+//     .from("news_snippets")
+//     .select("id, headline, category, source_url, priority")
+//     .eq("is_active", true)
+//     .order("priority", { ascending: false });
+//
+//   if (error) {
+//     return (
+//       <main style={{ padding: 24 }}>
+//         <h1>Error loading news</h1>
+//         <pre>{error.message}</pre>
+//       </main>
+//     );
+//   }
+//
+//   return (
+//     <main style={{ padding: 24 }}>
+//       <h1>News Snippets</h1>
+//
+//       <ul>
+//         {data?.map((item: NewsSnippet) => (
+//           <li key={item.id} style={{ marginBottom: 16 }}>
+//             <strong>{item.headline}</strong>
+//             {item.category && <div>Category: {item.category}</div>}
+//             {item.source_url && (
+//               <a href={item.source_url} target="_blank" rel="noopener noreferrer">
+//                 Read source
+//               </a>
+//             )}
+//           </li>
+//         ))}
+//       </ul>
+//     </main>
+//   );
+// }
+//----------Part2 MK2----------------------
+import { supabase } from "@/lib/supabaseClient";
+
+type NewsSnippet = {
+  id: number;
+  headline: string;
+  category: string | null;
+  source_url: string | null;
+  priority: number | null;
+};
+
+export default async function Home() {
+  const { data, error } = await supabase
+    .from("news_snippets")
+    .select("id, headline, category, source_url, priority")
+    .eq("is_active", true)
+    .order("priority", { ascending: false });
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-zinc-100 p-8">
+        <h1 className="text-2xl font-bold text-red-600">
+          Error loading news
+        </h1>
+        <pre className="mt-4 text-sm text-zinc-700">{error.message}</pre>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-zinc-100">
+      {/* Header */}
+      <header className="bg-black text-white py-12 px-6 text-center">
+        <h1 className="text-5xl font-extrabold tracking-tight">
+          Crak’d News
+        </h1>
+        <p className="mt-4 text-zinc-300 max-w-2xl mx-auto">
+          Curated headlines pulled live from Supabase — real data, real deployment.
+        </p>
+      </header>
+
+      {/* Content */}
+      <section className="max-w-4xl mx-auto px-6 py-12">
+        <ul className="space-y-6">
+          {data?.map((item: NewsSnippet) => (
+            <li
+              key={item.id}
+              className="rounded-xl bg-white p-6 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <h2 className="text-xl font-semibold text-zinc-900">
+                {item.headline}
+              </h2>
+
+              {item.category && (
+                <span className="inline-block mt-2 text-xs font-medium uppercase tracking-wide text-indigo-600">
+                  {item.category}
+                </span>
+              )}
+
+              {item.source_url && (
+                <div className="mt-4">
+                  <a
+                    href={item.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-indigo-600 hover:underline"
+                  >
+                    Read full story →
+                  </a>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </main>
+  );
 }
+
+
