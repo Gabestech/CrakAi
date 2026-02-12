@@ -222,7 +222,7 @@ export default function ProtectedPage() {
       </h1>
 
       <p className="mt-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
-        where humor gets judged
+        the speakeasy where humor gets judged
       </p>
       <div className="mt-6 w-24 h-[1px] bg-amber-400 opacity-50"></div>
 
