@@ -13,7 +13,7 @@ export default function CaptionReel({ userId }: { userId: string }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [voting, setVoting] = useState(false);
-
+//   const [generatedCaptions, setGeneratedCaptions] = useState<any[]>([]);
   // Fetch captions
   useEffect(() => {
     const fetchCaptions = async () => {
