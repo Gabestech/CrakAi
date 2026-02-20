@@ -29,6 +29,8 @@ export default function AdminPage() {
         return <TrendingPanel />
       case 'flavors':
           return <HumorFlavorsPanel />
+      case 'promptTester':
+          return <PromptTesterPanel />
     }
   }
 
@@ -53,6 +55,7 @@ export default function AdminPage() {
             { key: 'moderation', label: 'Moderation' },
             { key: 'trending', label: 'Trending' },
             { key: 'flavors', label: 'Flavors' },
+            { key: 'promptTester', label: 'Prompt Tester' },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -916,6 +919,167 @@ function HumorFlavorsPanel() {
     </div>
   )
 }
+
+//----------prompt tester for flavors-----------
+
+function PromptTesterPanel() {
+  const [flavors, setFlavors] = useState<any[]>([])
+  const [images, setImages] = useState<any[]>([])
+  const [selectedFlavor, setSelectedFlavor] = useState<number | null>(null)
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<any[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    const { data: flavorData } = await supabase
+      .from("humor_flavors")
+      .select("*")
+      .order("id")
+
+    const { data: imageData } = await supabase
+      .from("images")
+      .select("id, url")
+      .eq("is_common_use", true)
+      .limit(20)
+
+    setFlavors(flavorData || [])
+    setImages(imageData || [])
+  }
+
+  const generateCaptions = async () => {
+    if (!selectedFlavor || !selectedImage) {
+      setError("Please select both a flavor and an image.")
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError(null)
+      setResult([])
+
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+
+      const res = await fetch(
+        "https://api.almostcrackd.ai/pipeline/generate-captions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            imageId: selectedImage,
+            humorFlavorId: selectedFlavor,
+          }),
+        }
+      )
+
+      if (!res.ok) {
+        throw new Error(`Execution failed (Status ${res.status})`)
+      }
+
+      const dataResult = await res.json()
+      setResult(dataResult)
+    } catch (err: any) {
+      setError(
+        err.message.includes("504")
+          ? "Execution timeout. Try a lighter flavor."
+          : err.message
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+
+      <div className="bg-white/80 p-6 rounded shadow border">
+        <h2 className="text-xl font-bold text-teal-600 mb-4">
+          Prompt Chain Tester
+        </h2>
+
+        <div className="grid grid-cols-2 gap-6 mb-6">
+
+          {/* Flavor Select */}
+          <div>
+            <label className="block mb-2 font-semibold">Select Flavor</label>
+            <select
+              onChange={(e) => setSelectedFlavor(Number(e.target.value))}
+              className="w-full border p-2 rounded"
+            >
+              <option value="">-- Select Flavor --</option>
+              {flavors.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.slug}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Image Select */}
+          <div>
+            <label className="block mb-2 font-semibold">Select Image</label>
+            <select
+              onChange={(e) => setSelectedImage(e.target.value)}
+              className="w-full border p-2 rounded"
+            >
+              <option value="">-- Select Image --</option>
+              {images.map((img) => (
+                <option key={img.id} value={img.id}>
+                  {img.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <button
+          onClick={generateCaptions}
+          disabled={loading}
+          className="bg-pink-600 text-white px-6 py-2 rounded"
+        >
+          {loading ? "Running Prompt Chain..." : "Generate Captions"}
+        </button>
+
+        {error && (
+          <div className="mt-4 text-red-600 font-medium">
+            {error}
+          </div>
+        )}
+      </div>
+
+      {/* Results */}
+      {result.length > 0 && (
+        <div className="bg-white/80 p-6 rounded shadow border">
+          <h3 className="text-lg font-bold text-teal-600 mb-4">
+            Generated Captions
+          </h3>
+
+          <div className="space-y-4">
+            {result.map((cap: any) => (
+              <div
+                key={cap.id}
+                className="bg-zinc-100 p-4 rounded border"
+              >
+                {cap.content || cap.caption}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 
 
