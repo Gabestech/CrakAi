@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-type Tab = 'engagement' | 'power' | 'moderation' | 'trending' | 'flavors'
+type Tab = 'engagement' | 'power' | 'moderation' | 'trending' | 'flavors' |'promptTester'
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('engagement')
