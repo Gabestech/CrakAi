@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-type Tab = 'engagement' | 'power' | 'moderation' | 'trending'
+type Tab = 'engagement' | 'power' | 'moderation' | 'trending' | 'flavors'
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('engagement')
@@ -27,6 +27,8 @@ export default function AdminPage() {
         return <ModerationPanel />
       case 'trending':
         return <TrendingPanel />
+      case 'flavors':
+          return <HumorFlavorsPanel />
     }
   }
 
@@ -50,6 +52,7 @@ export default function AdminPage() {
             { key: 'power', label: 'Power Users' },
             { key: 'moderation', label: 'Moderation' },
             { key: 'trending', label: 'Trending' },
+            { key: 'flavors', label: 'Flavors' },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -584,6 +587,332 @@ function TrendingPanel() {
         </div>
       </div>
 
+    </div>
+  )
+}
+//----------flavors tab------------------------------------------
+function HumorFlavorsPanel() {
+  const [flavors, setFlavors] = useState<any[]>([])
+  const [selectedFlavor, setSelectedFlavor] = useState<any | null>(null)
+  const [steps, setSteps] = useState<any[]>([])
+  const [stepTypes, setStepTypes] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+
+
+  useEffect(() => {
+    fetchInitialData()
+  }, [])
+
+  const fetchInitialData = async () => {
+    setLoading(true)
+
+    const { data: flavorData } = await supabase
+      .from("humor_flavors")
+      .select("*")
+      .order("id")
+
+    const { data: typeData } = await supabase
+      .from("humor_flavor_step_types")
+      .select("*")
+
+    setFlavors(flavorData || [])
+    setStepTypes(typeData || [])
+    setLoading(false)
+  }
+
+  const loadSteps = async (flavorId: number) => {
+    const { data } = await supabase
+      .from("humor_flavor_steps")
+      .select("*")
+      .eq("humor_flavor_id", flavorId)
+      .order("order_by")
+
+    setSteps(data || [])
+  }
+
+  const updateFlavor = async () => {
+    if (!selectedFlavor) return
+
+    await supabase
+      .from("humor_flavors")
+      .update({
+        description: selectedFlavor.description,
+        slug: selectedFlavor.slug,
+      })
+      .eq("id", selectedFlavor.id)
+
+    alert("Flavor updated")
+  }
+
+  const updateStep = async (step: any) => {
+    await supabase
+      .from("humor_flavor_steps")
+      .update(step)
+      .eq("id", step.id)
+
+    alert("Step updated")
+  }
+
+  const deleteStep = async (id: number) => {
+    await supabase
+      .from("humor_flavor_steps")
+      .delete()
+      .eq("id", id)
+
+    setSteps(steps.filter((s) => s.id !== id))
+  }
+
+  const moveStep = async (index: number, direction: number) => {
+    const newSteps = [...steps]
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= newSteps.length) return
+
+    const current = newSteps[index]
+    const target = newSteps[targetIndex]
+
+    await supabase
+      .from("humor_flavor_steps")
+      .update({ order_by: target.order_by })
+      .eq("id", current.id)
+
+    await supabase
+      .from("humor_flavor_steps")
+      .update({ order_by: current.order_by })
+      .eq("id", target.id)
+
+    loadSteps(selectedFlavor.id)
+  }
+
+  if (loading) {
+    return <div>Loading flavors...</div>
+  }
+
+  return (
+    <div className="flex gap-8">
+
+      {/* LEFT SIDEBAR */}
+      <div className="w-1/3 bg-white/80 p-4 rounded border shadow">
+      <button
+        onClick={async () => {
+          const slug = prompt("Enter new flavor slug:")
+          if (!slug) return
+
+          const { data } = await supabase
+            .from("humor_flavors")
+            .insert({
+              slug,
+              description: "",
+            })
+            .select()
+            .single()
+
+          if (data) {
+            setFlavors([...flavors, data])
+          }
+        }}
+        className="mb-4 bg-teal-600 text-white px-3 py-2 rounded w-full"
+      >
+        + Add Flavor
+      </button>
+
+        <h2 className="font-bold mb-4 text-teal-600">Flavors</h2>
+
+        {flavors.map((flavor) => (
+          <div
+            key={flavor.id}
+            onClick={() => {
+              setSelectedFlavor(flavor)
+              loadSteps(flavor.id)
+            }}
+            className={`cursor-pointer p-2 rounded ${
+              selectedFlavor?.id === flavor.id
+                ? "bg-teal-100 font-semibold"
+                : "hover:bg-zinc-100"
+            }`}
+
+          >
+            {flavor.slug}
+          </div>
+        ))}
+      </div>
+
+      {/* RIGHT PANEL */}
+      <div className="w-2/3 bg-white/80 p-6 rounded border shadow">
+
+        {!selectedFlavor && <div>Select a flavor</div>}
+
+        {selectedFlavor && (
+          <>
+            <h2 className="text-xl font-bold mb-4">
+              Editing: {selectedFlavor.slug}
+            </h2>
+
+            {/* Flavor Fields */}
+            <div className="space-y-4 mb-8">
+              <input
+                value={selectedFlavor.slug}
+                onChange={(e) =>
+                  setSelectedFlavor({
+                    ...selectedFlavor,
+                    slug: e.target.value,
+                  })
+                }
+                className="w-full border p-2 rounded"
+              />
+
+              <textarea
+                value={selectedFlavor.description || ""}
+                onChange={(e) =>
+                  setSelectedFlavor({
+                    ...selectedFlavor,
+                    description: e.target.value,
+                  })
+                }
+                className="w-full border p-2 rounded"
+              />
+
+              <button
+                onClick={updateFlavor}
+                className="bg-teal-600 text-white px-4 py-2 rounded"
+              >
+                Save Flavor
+              </button>
+            </div>
+
+            {/* Steps */}
+            <h3 className="font-bold mb-4 text-teal-600">Steps</h3>
+
+            <button
+              onClick={async () => {
+                if (!selectedFlavor) return
+
+                const nextOrder =
+                  steps.length > 0
+                    ? Math.max(...steps.map((s) => s.order_by)) + 1
+                    : 1
+
+                const { data } = await supabase
+                  .from("humor_flavor_steps")
+                  .insert({
+                    humor_flavor_id: selectedFlavor.id,
+                    order_by: nextOrder,
+                    humor_flavor_step_type_id: stepTypes[0]?.id,
+                    llm_system_prompt: "",
+                    llm_user_prompt: "",
+                    description: "",
+                  })
+                  .select()
+                  .single()
+
+                if (data) {
+                  setSteps([...steps, data])
+                }
+              }}
+              className="mb-4 bg-teal-600 text-white px-3 py-2 rounded"
+            >
+              + Add Step
+            </button>
+
+
+            <div className="space-y-4">
+              {steps.map((step, index) => (
+                <div
+                  key={step.id}
+                  className="border p-4 rounded bg-white shadow-sm"
+                >
+                  <div className="flex justify-between mb-2">
+                     <strong>
+                       Step {index + 1} (Order: {step.order_by})
+                     </strong>
+
+                    <div className="space-x-2">
+                      <button
+                        onClick={() => moveStep(index, -1)}
+                        className="text-xs bg-zinc-200 px-2 py-1 rounded"
+                      >
+                        ↑
+                      </button>
+
+                      <button
+                        onClick={() => moveStep(index, 1)}
+                        className="text-xs bg-zinc-200 px-2 py-1 rounded"
+                      >
+                        ↓
+                      </button>
+
+                      <button
+                        onClick={() => deleteStep(step.id)}
+                        className="text-xs bg-red-500 text-white px-2 py-1 rounded"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  <select
+                    value={step.humor_flavor_step_type_id}
+                    onChange={(e) =>
+                      setSteps(
+                        steps.map((s) =>
+                          s.id === step.id
+                            ? {
+                                ...s,
+                                humor_flavor_step_type_id: Number(e.target.value),
+                              }
+                            : s
+                        )
+                      )
+                    }
+                    className="w-full border p-2 rounded mb-2"
+                  >
+                    {stepTypes.map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.slug}
+                      </option>
+                    ))}
+                  </select>
+
+                  <textarea
+                    value={step.llm_system_prompt || ""}
+                    onChange={(e) =>
+                      setSteps(
+                        steps.map((s) =>
+                          s.id === step.id
+                            ? { ...s, llm_system_prompt: e.target.value }
+                            : s
+                        )
+                      )
+                    }
+                    className="w-full border p-2 rounded mb-2"
+                  />
+
+                  <textarea
+                    value={step.llm_user_prompt || ""}
+                    onChange={(e) =>
+                      setSteps(
+                        steps.map((s) =>
+                          s.id === step.id
+                            ? { ...s, llm_user_prompt: e.target.value }
+                            : s
+                        )
+                      )
+                    }
+                    className="w-full border p-2 rounded mb-2"
+                  />
+
+                  <button
+                    onClick={() => updateStep(step)}
+                    className="bg-teal-600 text-white px-3 py-1 rounded"
+                  >
+                    Save Step
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
