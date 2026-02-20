@@ -1,0 +1,594 @@
+//----minimal render code--------------
+// export default function AdminPage() {
+//   return (
+//     <div>
+//       <h1>Admin Dashboard</h1>
+//     </div>
+//   )
+// }
+//-----minimal render code end here--------------
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
+
+type Tab = 'engagement' | 'power' | 'moderation' | 'trending'
+
+export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('engagement')
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'engagement':
+          return <EngagementPanel />
+      case 'power':
+        return <PowerUsersPanel />
+      case 'moderation':
+        return <ModerationPanel />
+      case 'trending':
+        return <TrendingPanel />
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-zinc-200 via-zinc-300 to-zinc-400 text-black relative overflow-hidden">
+
+      {/* Stainless overlay */}
+      <div className="absolute inset-0 opacity-20 bg-[url('/metal-texture.png')] bg-cover pointer-events-none" />
+
+      <div className="relative z-10 px-8 py-10">
+
+        {/* Title */}
+        <h1 className="text-4xl font-bold tracking-widest text-teal-500">
+          ADMIN CONTROL PANEL
+        </h1>
+
+        {/* Angled Nav */}
+        <div className="mt-8 flex space-x-6">
+          {[
+            { key: 'engagement', label: 'Engagement' },
+            { key: 'power', label: 'Power Users' },
+            { key: 'moderation', label: 'Moderation' },
+            { key: 'trending', label: 'Trending' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as Tab)}
+              className={`
+                relative px-6 py-3 font-semibold uppercase tracking-wider
+                transform -skew-x-12
+                transition-all duration-300
+                ${
+                  activeTab === tab.key
+                    ? 'bg-teal-500 text-black shadow-lg'
+                    : 'bg-zinc-600 text-white hover:bg-teal-400'
+                }
+              `}
+            >
+              <span className="block skew-x-12">
+                {tab.label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Content Panel */}
+        <div className="mt-12 bg-white/70 backdrop-blur-md border border-zinc-500 p-8 rounded-lg shadow-xl">
+          {renderContent()}
+        </div>
+
+      </div>
+    </main>
+  )
+}
+
+
+//engagement tab----
+function EngagementPanel() {
+  const [stats, setStats] = useState<any>(null)
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const [
+        { count: userCount },
+        { count: captionCount },
+        { count: reportCount },
+        { data: likesData },
+      ] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('captions').select('*', { count: 'exact', head: true }),
+        supabase.from('reported_captions').select('*', { count: 'exact', head: true }),
+        supabase.from('caption_likes').select('caption_id'),
+      ])
+
+      const avgLikes =
+        captionCount && captionCount > 0
+          ? (likesData?.length || 0) / captionCount
+          : 0
+
+      setStats({
+        users: userCount || 0,
+        captions: captionCount || 0,
+        reports: reportCount || 0,
+        avgLikes: avgLikes.toFixed(2),
+      })
+    }
+
+    fetchStats()
+  }, [])
+
+  if (!stats) {
+    return <div className="text-teal-500">Loading engagement metrics...</div>
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <StatCard label="Total Users" value={stats.users} />
+      <StatCard label="Total Captions" value={stats.captions} />
+      <StatCard label="Total Reports" value={stats.reports} />
+      <StatCard label="Avg Likes / Caption" value={stats.avgLikes} pink />
+    </div>
+  )
+}
+
+function StatCard({
+  label,
+  value,
+  pink,
+}: {
+  label: string
+  value: string | number
+  pink?: boolean
+}) {
+  return (
+    <div className="bg-white/80 backdrop-blur-md border border-zinc-500 p-6 rounded-lg shadow-lg">
+      <div className="text-sm uppercase tracking-widest text-zinc-600">
+        {label}
+      </div>
+      <div
+        className={`mt-4 text-3xl font-bold ${
+          pink ? 'text-pink-500' : 'text-teal-500'
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+//Powwer users tab------------------------------------------------
+function PowerUsersPanel() {
+  const [users, setUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchPowerUsers = async () => {
+      const { data: captions } = await supabase
+        .from('captions')
+        .select('profile_id, like_count')
+
+      if (!captions) {
+        setLoading(false)
+        return
+      }
+
+      // Aggregate caption count + total likes per user
+      const aggregation: Record<string, { captionCount: number; totalLikes: number }> = {}
+
+      captions.forEach((c: any) => {
+        if (!aggregation[c.profile_id]) {
+          aggregation[c.profile_id] = {
+            captionCount: 0,
+            totalLikes: 0,
+          }
+        }
+
+        aggregation[c.profile_id].captionCount += 1
+        aggregation[c.profile_id].totalLikes += Number(c.like_count || 0)
+      })
+
+      const sorted = Object.entries(aggregation)
+        .sort((a, b) => b[1].captionCount - a[1].captionCount)
+        .slice(0, 5)
+
+      const topIds = sorted.map(([id]) => id)
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .in('id', topIds)
+
+      const result = sorted.map(([id, stats]) => {
+        const profile = profiles?.find((p: any) => p.id === id)
+
+        return {
+          id,
+          name: profile
+            ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
+            : 'Unknown User',
+          captionCount: stats.captionCount,
+          totalLikes: stats.totalLikes,
+        }
+      })
+
+      setUsers(result)
+      setLoading(false)
+    }
+
+    fetchPowerUsers()
+  }, [])
+
+  if (loading) {
+    return <div className="text-teal-500">Loading power users...</div>
+  }
+
+  return (
+    <div className="bg-white/80 backdrop-blur-md border border-zinc-500 p-8 rounded-lg shadow-xl">
+      <h2 className="text-2xl font-bold text-teal-500 mb-6 uppercase tracking-widest">
+        Top Caption Creators
+      </h2>
+
+      <div className="space-y-4">
+        {users.map((user, index) => (
+          <div
+            key={user.id}
+            className="flex justify-between items-center border-b border-zinc-400 pb-3"
+          >
+            <div>
+              <div className="text-zinc-800 font-semibold">
+                {index + 1}. {user.name}
+              </div>
+              <div className="text-xs text-zinc-500">
+                {user.totalLikes} total likes
+              </div>
+            </div>
+
+            <div className="text-pink-500 font-bold">
+              {user.captionCount} captions
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+//-------Moderation Tab--------------------------------------
+function ModerationPanel() {
+  const [reported, setReported] = useState<any[]>([])
+  const [downvoted, setDownvoted] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchModerationData = async () => {
+
+      // ------------------------
+      // MOST REPORTED
+      // ------------------------
+      const { data: reports } = await supabase
+        .from('reported_captions')
+        .select('caption_id')
+
+      const reportCounts: Record<string, number> = {}
+
+      reports?.forEach((r: any) => {
+        reportCounts[r.caption_id] =
+          (reportCounts[r.caption_id] || 0) + 1
+      })
+
+      const sortedReports = Object.entries(reportCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+
+      const reportIds = sortedReports.map(([id]) => id)
+
+      const { data: reportCaptions } = await supabase
+        .from('captions')
+        .select('id, content')
+        .in('id', reportIds)
+
+      const reportedResult = sortedReports.map(([id, count]) => {
+        const cap = reportCaptions?.find((c: any) => c.id === id)
+        return {
+          id,
+          content: cap?.content || 'Missing',
+          count,
+        }
+      })
+
+      // ------------------------
+      // MOST DOWNVOTED
+      // ------------------------
+      const { data: votes } = await supabase
+        .from('caption_votes')
+        .select('caption_id, vote_value')
+
+      const downvoteCounts: Record<string, number> = {}
+
+      votes?.forEach((v: any) => {
+        if (v.vote_value < 0) {
+          downvoteCounts[v.caption_id] =
+            (downvoteCounts[v.caption_id] || 0) + 1
+        }
+      })
+
+      const sortedDownvotes = Object.entries(downvoteCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+
+      const downvoteIds = sortedDownvotes.map(([id]) => id)
+
+      const { data: downvoteCaptions } = await supabase
+        .from('captions')
+        .select('id, content')
+        .in('id', downvoteIds)
+
+      const downvotedResult = sortedDownvotes.map(([id, count]) => {
+        const cap = downvoteCaptions?.find((c: any) => c.id === id)
+        return {
+          id,
+          content: cap?.content || 'Missing',
+          count,
+        }
+      })
+
+      setReported(reportedResult)
+      setDownvoted(downvotedResult)
+      setLoading(false)
+    }
+
+    fetchModerationData()
+  }, [])
+
+  const handleDelete = async (captionId: string) => {
+    if (!confirm('Delete this caption permanently?')) return
+
+    await supabase.from('captions').delete().eq('id', captionId)
+
+    setReported(prev => prev.filter(c => c.id !== captionId))
+    setDownvoted(prev => prev.filter(c => c.id !== captionId))
+  }
+
+  if (loading) {
+    return <div className="text-teal-500">Loading moderation data...</div>
+  }
+
+  return (
+    <div className="space-y-10">
+
+      {/* MOST REPORTED */}
+      <div className="bg-white/80 backdrop-blur-md border border-red-300 p-6 rounded-lg shadow-lg">
+        <h2 className="text-xl font-bold text-red-600 mb-4 uppercase tracking-widest">
+          Most Reported
+        </h2>
+
+        {reported.map((cap) => (
+          <div key={cap.id} className="mb-4 p-4 border border-red-200 rounded bg-red-50">
+            <div className="flex justify-between items-center">
+              <div className="text-red-600 font-bold">
+                {cap.count} Reports
+              </div>
+              <button
+                onClick={() => handleDelete(cap.id)}
+                className="text-xs px-3 py-1 bg-black text-white hover:bg-red-600 transition"
+              >
+                Delete
+              </button>
+            </div>
+            <div className="mt-2 text-zinc-800">
+              {cap.content}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* MOST DOWNVOTED */}
+      <div className="bg-white/80 backdrop-blur-md border border-purple-300 p-6 rounded-lg shadow-lg">
+        <h2 className="text-xl font-bold text-purple-600 mb-4 uppercase tracking-widest">
+          Most Downvoted
+        </h2>
+
+        {downvoted.map((cap) => (
+          <div key={cap.id} className="mb-4 p-4 border border-purple-200 rounded bg-purple-50">
+            <div className="flex justify-between items-center">
+              <div className="text-purple-600 font-bold">
+                {cap.count} Downvotes
+              </div>
+              <button
+                onClick={() => handleDelete(cap.id)}
+                className="text-xs px-3 py-1 bg-black text-white hover:bg-purple-600 transition"
+              >
+                Delete
+              </button>
+            </div>
+            <div className="mt-2 text-zinc-800">
+              {cap.content}
+            </div>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  )
+}
+//------------------Trending tab---------------------------------
+function TrendingPanel() {
+  const [captions, setCaptions] = useState<any[]>([])
+  const [images, setImages] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // 1️⃣ Fetch top captions from production
+        const captionRes = await fetch(
+          "https://secure.almostcrackd.ai/rest/v1/captions?select=id,content,like_count,image_id&order=like_count.desc",
+          {
+            headers: {
+              apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+            },
+          }
+        )
+
+        const captionData = await captionRes.json()
+
+        // 2️⃣ Collect unique image IDs
+        const uniqueImageIds = [
+          ...new Set(captionData.map((c: any) => c.image_id)),
+        ]
+
+        // 3️⃣ Fetch corresponding image URLs
+        const imageRes = await fetch(
+          `https://secure.almostcrackd.ai/rest/v1/images?select=id,url&id=in.(${uniqueImageIds.join(",")})`,
+          {
+            headers: {
+              apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+            },
+          }
+        )
+
+        const imageData = await imageRes.json()
+
+        const imageMap: Record<string, string> = {}
+        imageData.forEach((img: any) => {
+          imageMap[img.id] = img.url
+        })
+
+        setCaptions(captionData)
+        setImages(imageMap)
+        setLoading(false)
+      } catch (err) {
+        console.error("Trending fetch failed:", err)
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  if (loading) {
+    return <div className="text-teal-500">Loading live engagement...</div>
+  }
+
+  if (!captions.length) {
+    return <div className="text-zinc-500">No trending data available.</div>
+  }
+
+  const champion = captions[0]
+
+  // Aggregate image totals
+  const imageTotals: Record<string, number> = {}
+  captions.forEach((c: any) => {
+    imageTotals[c.image_id] =
+      (imageTotals[c.image_id] || 0) + Number(c.like_count)
+  })
+
+  const sortedImages = Object.entries(imageTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+
+  return (
+    <div className="space-y-16">
+
+      {/* DATA SOURCE BADGE */}
+      <div className="text-xs uppercase tracking-widest text-zinc-500">
+        Data Source: Production (Live Engagement)
+      </div>
+
+      {/* 🏆 PLATFORM CHAMPION */}
+      <div className="max-w-3xl mx-auto bg-white/80 backdrop-blur-md p-8 rounded-xl border shadow-xl text-center">
+        <div className="text-sm uppercase tracking-widest text-teal-500 mb-3">
+          🏆 Platform Champion
+        </div>
+
+        {images[champion.image_id] && (
+          <img
+            src={images[champion.image_id]}
+            alt="Champion"
+            className="w-full max-h-[600px] object-contain rounded-lg mb-6 bg-zinc-100"
+          />
+        )}
+
+        <div className="text-4xl font-bold text-pink-500 mb-3">
+          {champion.like_count} Likes
+        </div>
+
+        <div className="text-lg text-zinc-800">
+          {champion.content}
+        </div>
+      </div>
+
+      {/* 🖼 TOP CAPTION–IMAGE PAIRS */}
+      <div>
+        <h2 className="text-xl font-bold text-teal-500 mb-6 uppercase tracking-widest">
+          Top Caption–Image Pairs
+        </h2>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {captions.slice(1, 5).map((cap: any) => (
+            <div
+              key={cap.id}
+              className="bg-white/80 p-4 rounded-lg border shadow"
+            >
+              {images[cap.image_id] && (
+                <img
+                  src={images[cap.image_id]}
+                  alt="Trending Pair"
+                  className="w-full max-h-[400px] object-contain rounded-lg mb-3 bg-zinc-100"
+                />
+              )}
+
+              <div className="text-pink-500 font-bold mb-2">
+                {cap.like_count} Likes
+              </div>
+
+              <div className="text-sm text-zinc-800">
+                {cap.content}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 📊 IMAGE ENGAGEMENT LEADERBOARD */}
+      <div>
+        <h2 className="text-xl font-bold text-teal-500 mb-6 uppercase tracking-widest">
+          Image Engagement Leaderboard
+        </h2>
+
+        <div className="space-y-3">
+          {sortedImages.map(([imageId, total], index) => (
+            <div
+              key={imageId}
+              className="flex justify-between items-center bg-white/80 p-4 rounded border shadow"
+            >
+              <div className="flex items-center gap-4">
+                {images[imageId] && (
+                  <img
+                    src={images[imageId]}
+                    alt="Leaderboard"
+                    className="w-20 h-20 object-contain bg-zinc-100 rounded"
+                  />
+                )}
+                <div className="font-semibold text-zinc-800">
+                  #{index + 1}
+                </div>
+              </div>
+
+              <div className="text-pink-500 font-bold">
+                {total} Total Likes
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+
+
+
+
