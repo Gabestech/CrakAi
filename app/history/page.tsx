@@ -94,7 +94,9 @@ export default function HistoryPage() {
       <div className="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
 
         {votes.map((vote) => {
-          const image = vote.captions?.images;
+          const image = Array.isArray(vote.captions?.images)
+            ? vote.captions.images[0]
+            : vote.captions?.images;
 
           return (
             <div
@@ -103,7 +105,7 @@ export default function HistoryPage() {
             >
 
               {/* IMAGE */}
-              {image?.url && (
+              {image && 'url' in image && (
                 <img
                   src={image.url}
                   className="w-full h-[200px] object-cover"
