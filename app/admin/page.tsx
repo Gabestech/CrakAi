@@ -6,16 +6,37 @@
 //     </div>
 //   )
 // }
-//-----minimal render code end here--------------
+//-----minimal render code ends here--------------
 'use client'
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import Link from "next/link"
 
 type Tab = 'engagement' | 'power' | 'moderation' | 'trending' | 'flavors' |'promptTester'
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('engagement')
+
+
+//O-Auth stat -------------
+const [user, setUser] = useState<any>(null);
+const [loadingAuth, setLoadingAuth] = useState(true);
+
+useEffect(() => {
+  supabase.auth.getUser().then(({ data }) => {
+    setUser(data.user);
+    setLoadingAuth(false);
+  });
+}, []);
+
+  if (loadingAuth) {
+    return <div className="text-white p-10">Checking access...</div>
+  }
+
+  if (!user) {
+    return <div className="text-red-500 p-10">Unauthorized</div>
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -46,6 +67,25 @@ export default function AdminPage() {
         <h1 className="text-4xl font-bold tracking-widest text-teal-500">
           ADMIN CONTROL PANEL
         </h1>
+
+        {/* homepage Links */}
+        <div className="flex justify-between items-center mt-6 mb-4">
+
+          <div className="flex gap-3">
+            <Link href="/">
+              <button className="bg-zinc-700 text-white px-4 py-2 rounded hover:bg-zinc-600">
+                ← Home
+              </button>
+            </Link>
+
+            <Link href="/speakeasy">
+              <button className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-500">
+                Speakeasy
+              </button>
+            </Link>
+          </div>
+
+        </div>
 
         {/* Angled Nav */}
         <div className="mt-8 flex space-x-6">
@@ -624,68 +664,141 @@ function HumorFlavorsPanel() {
     setLoading(false)
   }
 
-  const loadSteps = async (flavorId: number) => {
-    const { data } = await supabase
-      .from("humor_flavor_steps")
-      .select("*")
-      .eq("humor_flavor_id", flavorId)
-      .order("order_by")
+const loadSteps = async (flavorId: number) => {
+  const { data, error } = await supabase
+    .from("humor_flavor_steps")
+    .select("*")
+    .eq("humor_flavor_id", flavorId)
+    .order("order_by")
+    //console.log("LOADED STEPS:", data)
+  setSteps(data || [])
+}
 
-    setSteps(data || [])
-  }
+const updateFlavor = async () => {
+  try {
+    if (!selectedFlavor) return;
 
-  const updateFlavor = async () => {
-    if (!selectedFlavor) return
+    //  Get current user
+    const { data: { user } } = await supabase.auth.getUser();
 
-    await supabase
+    if (!user) {
+      alert("You must be logged in");
+      return;
+    }
+
+    const { error } = await supabase
       .from("humor_flavors")
       .update({
         description: selectedFlavor.description,
         slug: selectedFlavor.slug,
+
+        // New REQUIRED FIELD
+        modified_by_user_id: user.id,
       })
-      .eq("id", selectedFlavor.id)
+      .eq("id", selectedFlavor.id);
 
-    alert("Flavor updated")
+    if (error) {
+      console.error("Update failed:", error.message);
+      alert("Error updating flavor");
+      return;
+    }
+
+    alert("Flavor updated");
+  } catch (err) {
+    console.error("Crash:", err);
+  }
+};
+
+const updateStep = async (step: any) => {
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    alert("Not authenticated")
+    return
   }
 
-  const updateStep = async (step: any) => {
-    await supabase
-      .from("humor_flavor_steps")
-      .update(step)
-      .eq("id", step.id)
+  const { error } = await supabase
+    .from("humor_flavor_steps")
+    .update({
+      humor_flavor_step_type_id: step.humor_flavor_step_type_id,
+      llm_input_type_id: step.llm_input_type_id,
+      llm_output_type_id: step.llm_output_type_id,
+      llm_model_id: step.llm_model_id,
+      llm_system_prompt: step.llm_system_prompt,
+      llm_user_prompt: step.llm_user_prompt,
+      description: step.description,
+      order_by: step.order_by,
+      modified_by_user_id: user.id,
+    })
+    .eq("id", step.id)
 
-    alert("Step updated")
+  if (error) {
+    console.error(error)
+    alert("Step update failed")
+    return
   }
 
-  const deleteStep = async (id: number) => {
-    await supabase
-      .from("humor_flavor_steps")
-      .delete()
-      .eq("id", id)
+  alert("Step updated")
+}
 
-    setSteps(steps.filter((s) => s.id !== id))
+
+const deleteStep = async (id: number) => {
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    alert("Not authenticated")
+    return
   }
 
-  const moveStep = async (index: number, direction: number) => {
-    const newSteps = [...steps]
-    const targetIndex = index + direction
-    if (targetIndex < 0 || targetIndex >= newSteps.length) return
+  const { error } = await supabase
+    .from("humor_flavor_steps")
+    .delete()
+    .eq("id", id)
 
-    const current = newSteps[index]
-    const target = newSteps[targetIndex]
-
-    await supabase
-      .from("humor_flavor_steps")
-      .update({ order_by: target.order_by })
-      .eq("id", current.id)
-
-    await supabase
-      .from("humor_flavor_steps")
-      .update({ order_by: current.order_by })
-      .eq("id", target.id)
-
-    loadSteps(selectedFlavor.id)
+  if (error) {
+    console.log("DELETE ERROR:", error)
+    alert("Delete failed")
+    return
   }
+
+  setSteps(steps.filter(s => s.id !== id))
+}
+
+const moveStep = async (index: number, direction: number) => {
+  const { data: { user } } = await supabase.auth.getUser()
+  const newSteps = [...steps]
+
+  if (!user) {
+    alert("Not authenticated")
+    return
+  }
+
+
+  const targetIndex = index + direction
+  if (targetIndex < 0 || targetIndex >= newSteps.length) return
+
+  const current = newSteps[index]
+  const target = newSteps[targetIndex]
+
+  await Promise.all([
+    supabase
+      .from("humor_flavor_steps")
+      .update({
+        order_by: target.order_by,
+        modified_by_user_id: user.id,
+      })
+      .eq("id", current.id),
+
+    supabase
+      .from("humor_flavor_steps")
+      .update({
+        order_by: current.order_by,
+        modified_by_user_id: user.id,
+      })
+      .eq("id", target.id),
+  ])
+  loadSteps(selectedFlavor.id)
+}
 
   if (loading) {
     return <div>Loading flavors...</div>
@@ -696,27 +809,102 @@ function HumorFlavorsPanel() {
 
       {/* LEFT SIDEBAR */}
       <div className="w-1/3 bg-white/80 p-4 rounded border shadow">
-      <button
-        onClick={async () => {
-          const slug = prompt("Enter new flavor slug:")
-          if (!slug) return
 
-          const { data } = await supabase
-            .from("humor_flavors")
-            .insert({
-              slug,
+        <button
+          onClick={async () => {
+            if (!selectedFlavor) return
+
+            const { data: { user } } = await supabase.auth.getUser()
+
+            if (!user) {
+              alert("Not authenticated")
+              return
+            }
+
+            if (!stepTypes.length) {
+              alert("No step types found")
+              return
+            }
+
+            const nextOrder =
+              steps.length > 0
+                ? Math.max(...steps.map((s) => s.order_by)) + 1
+                : 1
+
+            const payload = {
+              humor_flavor_id: selectedFlavor.id,
+              order_by: nextOrder,
+              humor_flavor_step_type_id: stepTypes[0].id,
+              llm_input_type_id: 1,
+              llm_output_type_id: 1,
+              llm_model_id: 1,
+              llm_system_prompt: "",
+              llm_user_prompt: "",
               description: "",
-            })
-            .select()
-            .single()
+              created_by_user_id: user.id,
+              modified_by_user_id: user.id,
+            };
 
-          if (data) {
-            setFlavors([...flavors, data])
-          }
-        }}
-        className="mb-4 bg-teal-600 text-white px-3 py-2 rounded w-full"
-      >
-        + Add Flavor
+            // 👇 log FIRST
+            console.log("INSERT PAYLOAD:", payload);
+            //console.log("FINAL PAYLOAD KEYS:", Object.keys(payload));
+            //console.log("FINAL PAYLOAD:", payload);
+
+            // 👇 THEN insert
+            const { data, error } = await supabase
+              .from("humor_flavor_steps")
+              .insert(payload);
+
+            if (error) {
+              console.log("ADD STEP ERROR:", JSON.stringify(error, null, 2))
+              alert("Insert Failed")
+              return
+            }
+
+              setSteps([...steps, payload])
+          }}
+          className="mb-4 bg-teal-600 text-white px-3 py-2 rounded"
+        >
+         + Add Step
+        </button>
+
+
+      <button
+           onClick={async () => {
+             const slug = prompt("Enter new flavor slug:")
+             if (!slug) return
+
+             const { data: { user } } = await supabase.auth.getUser()
+
+             if (!user) {
+               alert("Not authenticated")
+               return
+             }
+
+             const { data, error } = await supabase
+               .from("humor_flavors")
+               .insert({
+                 slug,
+                 description: "",
+                 created_by_user_id: user.id,
+                 modified_by_user_id: user.id,
+               })
+               .select()
+               .single()
+
+             if (error) {
+               console.error(error)
+               alert("Insert failed")
+               return
+             }
+
+             if (data) {
+               setFlavors([...flavors, data])
+             }
+           }}
+           className="mb-4 bg-teal-600 text-white px-3 py-2 rounded w-full"
+         >
+       + Add Flavor
       </button>
 
         <h2 className="font-bold mb-4 text-teal-600">Flavors</h2>
@@ -746,7 +934,7 @@ function HumorFlavorsPanel() {
         {!selectedFlavor && <div>Select a flavor</div>}
 
         {selectedFlavor && (
-          <>
+          <div>
             <h2 className="text-xl font-bold mb-4">
               Editing: {selectedFlavor.slug}
             </h2>
@@ -790,38 +978,67 @@ function HumorFlavorsPanel() {
               onClick={async () => {
                 if (!selectedFlavor) return
 
+                const { data: { user } } = await supabase.auth.getUser()
+
+                if (!user) {
+                  alert("Not authenticated")
+                  return
+                }
+
+                if (!stepTypes.length) {
+                  alert("No step types found")
+                  return
+                }
+
                 const nextOrder =
                   steps.length > 0
                     ? Math.max(...steps.map((s) => s.order_by)) + 1
                     : 1
 
-                const { data } = await supabase
-                  .from("humor_flavor_steps")
-                  .insert({
-                    humor_flavor_id: selectedFlavor.id,
-                    order_by: nextOrder,
-                    humor_flavor_step_type_id: stepTypes[0]?.id,
-                    llm_system_prompt: "",
-                    llm_user_prompt: "",
-                    description: "",
-                  })
-                  .select()
-                  .single()
+                 const payload = {
+                   humor_flavor_id: selectedFlavor.id,
+                   order_by: nextOrder,
+                   humor_flavor_step_type_id: stepTypes[0].id,
 
-                if (data) {
-                  setSteps([...steps, data])
-                }
-              }}
-              className="mb-4 bg-teal-600 text-white px-3 py-2 rounded"
-            >
-              + Add Step
-            </button>
+                   // changes
+                   llm_input_type_id: 1,
+                   llm_output_type_id: 1,
+                   llm_model_id: 1,
 
+                   llm_system_prompt: "",
+                   llm_user_prompt: "",
+                   description: "",
+                   created_by_user_id: user.id,
+                   modified_by_user_id: user.id,
+                 };
 
+                 // 👇 DEBUG log
+                 //console.log("REAL INSERT PAYLOAD:", payload);
+
+                 const { data, error } = await supabase
+                   .from("humor_flavor_steps")
+                   .insert(payload)
+                   .select()
+                   .single();
+
+                 if (error) {
+                   console.log("ADD STEP ERROR:", JSON.stringify(error, null, 2))
+                   alert("Insert failed")
+                   return
+                 }
+
+                 if (!error) {
+                   setSteps([...steps, data])
+                 }
+               }}
+               className="mb-4 bg-teal-600 text-white px-3 py-2 rounded"
+             >
+               + Add Step
+             </button>
             <div className="space-y-4">
               {steps.map((step, index) => (
                 <div
-                  key={step.id}
+                  key={step.id ?? index}
                   className="border p-4 rounded bg-white shadow-sm"
                 >
                   <div className="flex justify-between mb-2">
@@ -913,12 +1130,13 @@ function HumorFlavorsPanel() {
                 </div>
               ))}
             </div>
-          </>
-        )}
+
+           </div>
+          )}
       </div>
-    </div>
-  )
-}
+      </div>
+      )
+  }
 
 //----------prompt tester for flavors-----------
 

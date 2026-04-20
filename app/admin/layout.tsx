@@ -18,7 +18,7 @@ export default function AdminLayout({
         data: { user },
       } = await supabase.auth.getUser()
 
-      console.log('USER:', user)
+      //console.log('USER:', user)
 
       if (!user) {
         console.log('No user, redirecting')
@@ -32,7 +32,7 @@ export default function AdminLayout({
         .eq('id', user.id)
         .single()
 
-      console.log('PROFILE:', profile)
+      //console.log('PROFILE:', profile)
 
       if (!profile || !profile.is_superadmin) {
         console.log('Not superadmin, redirecting')
